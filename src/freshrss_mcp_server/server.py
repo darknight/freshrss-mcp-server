@@ -120,20 +120,33 @@ def create_server(host: str = "127.0.0.1", port: int = 8000) -> FastMCP:
         return await articles.get_subscriptions(client)
 
     @server.tool()
-    async def fetch_full_article(url: str) -> dict[str, Any]:
+    async def fetch_full_article(
+        url: str,
+        force_dynamic: bool = False,
+    ) -> dict[str, Any]:
         """Fetch full article content from original URL.
 
         Use this tool when an RSS feed only provides a summary and you need
         the complete article text. It extracts the main content from the webpage.
 
+        By default, uses fast static fetching. If the returned content seems
+        incomplete (e.g., just "Loading..." or JavaScript placeholders),
+        call again with force_dynamic=True to use browser rendering.
+
         Args:
             url: The original article URL to fetch
+            force_dynamic: Force browser rendering for JS-heavy sites (default: False)
 
         Returns:
-            Extracted article content with title, text, author, and date if available
+            Extracted article content with title, text, author, date, and method.
+            The 'method' field indicates 'static' or 'dynamic' fetch was used.
         """
         app_settings = get_settings()
-        return await fetcher.fetch_full_article(url, timeout=app_settings.request_timeout)
+        return await fetcher.fetch_full_article(
+            url,
+            force_dynamic=force_dynamic,
+            timeout=app_settings.request_timeout,
+        )
 
     return server
 

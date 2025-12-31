@@ -13,7 +13,8 @@ An MCP (Model Context Protocol) Server that connects to a self-hosted FreshRSS i
 - **MCP SDK**: mcp-python-sdk (mcp[cli] >= 1.25.0)
 - **HTTP Client**: httpx (async)
 - **Data Validation**: Pydantic + pydantic-settings
-- **Article Extraction**: trafilatura
+- **Article Extraction**: trafilatura (static), Playwright (dynamic)
+- **Browser Automation**: Playwright (for JS-rendered pages)
 - **API**: FreshRSS Google Reader compatible API
 
 ## Core Features
@@ -38,7 +39,8 @@ src/freshrss_mcp_server/
 └── tools/
     ├── __init__.py
     ├── articles.py        # Article-related tools
-    └── fetcher.py         # Full article fetcher
+    ├── fetcher.py         # Full article fetcher (static + dynamic)
+    └── browser.py         # Playwright browser wrapper
 
 ```
 
@@ -48,7 +50,7 @@ src/freshrss_mcp_server/
 |------|-------------|
 | `get_unread_articles` | Fetch unread articles list |
 | `get_article_content` | Get single article content |
-| `fetch_full_article` | Scrape full content from original URL |
+| `fetch_full_article` | Scrape full content from original URL (supports `force_dynamic` for JS sites) |
 | `mark_as_read` | Mark articles as read |
 | `get_subscriptions` | Get subscription feeds list |
 
@@ -64,6 +66,10 @@ FRESHRSS_API_PASSWORD=your_api_password
 MCP_TRANSPORT=sse      # "stdio" or "sse"
 MCP_HOST=0.0.0.0       # HTTP server host
 MCP_PORT=8080          # HTTP server port
+
+# Optional: Dynamic fetch / Playwright (defaults shown)
+ENABLE_DYNAMIC_FETCH=true   # Enable Playwright for JS-rendered pages
+BROWSER_TIMEOUT=30          # Playwright page load timeout in seconds
 ```
 
 ## Running the Server
@@ -84,6 +90,9 @@ By default, the server starts in SSE mode for remote deployment:
 ```bash
 # Install dependencies
 uv sync
+
+# Install Playwright browser (required for dynamic fetch)
+uv run playwright install chromium
 
 # Run with defaults (SSE on 0.0.0.0:8080)
 uv run freshrss-mcp
@@ -232,5 +241,37 @@ API Source: https://github.com/FreshRSS/FreshRSS/blob/edge/p/api/greader.php
 1. AI calls `get_unread_articles` to fetch unread article list
 2. AI analyzes titles and summaries to determine importance
 3. For incomplete summaries, AI calls `fetch_full_article` to get full content
+   - If content appears incomplete (JS placeholders), retry with `force_dynamic=True`
 4. AI generates summary report for all articles
 5. After user reads, AI calls `mark_as_read` to mark as read
+
+## Docker Deployment
+
+Use Microsoft's official Playwright image for easy deployment:
+
+```dockerfile
+FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
+
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+COPY src/ ./src/
+
+RUN pip install uv && uv sync
+
+# Browser already installed in base image
+
+ENV ENABLE_DYNAMIC_FETCH=true
+
+CMD ["uv", "run", "freshrss-mcp"]
+```
+
+Build and run:
+
+```bash
+docker build -t freshrss-mcp .
+docker run -p 8080:8080 \
+  -e FRESHRSS_API_URL=https://your-freshrss/api/greader.php \
+  -e FRESHRSS_USERNAME=your_username \
+  -e FRESHRSS_API_PASSWORD=your_password \
+  freshrss-mcp
+```

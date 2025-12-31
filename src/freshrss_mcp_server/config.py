@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     request_timeout: int = 30
     default_article_limit: int = 100
 
+    # Dynamic fetch settings (Playwright)
+    enable_dynamic_fetch: bool = True
+    browser_timeout: int = 30
+
     # MCP Server Configuration
     mcp_transport: Literal["stdio", "sse"] = "sse"
     mcp_host: str = "0.0.0.0"
