@@ -1,6 +1,7 @@
 """Configuration management for FreshRSS MCP Server."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -16,6 +17,11 @@ class Settings(BaseSettings):
     # Optional settings with defaults
     request_timeout: int = 30
     default_article_limit: int = 100
+
+    # MCP Server Configuration
+    mcp_transport: Literal["stdio", "sse"] = "sse"
+    mcp_host: str = "0.0.0.0"
+    mcp_port: int = 8080
 
     model_config = SettingsConfigDict(
         env_file=".env",

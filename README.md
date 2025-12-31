@@ -42,13 +42,19 @@ cp .env.example .env
 Create a `.env` file with the following variables:
 
 ```bash
+# Required: FreshRSS API
 FRESHRSS_API_URL=https://your-freshrss-instance/api/greader.php
 FRESHRSS_USERNAME=your_username
 FRESHRSS_API_PASSWORD=your_api_password
 
-# Optional
+# Optional: Request settings
 REQUEST_TIMEOUT=30
 DEFAULT_ARTICLE_LIMIT=100
+
+# Optional: MCP Server (defaults shown)
+MCP_TRANSPORT=sse      # "stdio" or "sse"
+MCP_HOST=0.0.0.0       # HTTP server host
+MCP_PORT=8080          # HTTP server port
 ```
 
 ### FreshRSS API Setup
@@ -62,12 +68,23 @@ DEFAULT_ARTICLE_LIMIT=100
 
 ### Running the Server
 
+**SSE/HTTP Mode** (default, for remote deployment):
 ```bash
-# Run MCP server (stdio mode)
-uv run python -m freshrss_mcp_server.server
-
-# Or use the entry point
+# Run with defaults (SSE on 0.0.0.0:8080)
 uv run freshrss-mcp
+```
+
+**STDIO Mode** (for Claude Desktop):
+```bash
+uv run freshrss-mcp --transport stdio
+```
+
+**CLI Options** (override environment variables):
+```
+--transport {stdio,sse}  Transport mode (env: MCP_TRANSPORT, default: sse)
+--host HOST              HTTP server host (env: MCP_HOST, default: 0.0.0.0)
+--port PORT              HTTP server port (env: MCP_PORT, default: 8080)
+--version                Show version
 ```
 
 ### Claude Desktop Configuration
@@ -79,7 +96,7 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   "mcpServers": {
     "freshrss": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/freshrss-mcp-server", "python", "-m", "freshrss_mcp_server.server"],
+      "args": ["run", "--directory", "/path/to/freshrss-mcp-server", "freshrss-mcp", "--transport", "stdio"],
       "env": {
         "FRESHRSS_API_URL": "https://your-freshrss-instance/api/greader.php",
         "FRESHRSS_USERNAME": "your_username",
@@ -139,6 +156,16 @@ Fetch full article content from original URL (for summary-only feeds).
 5. After user reviews, AI calls `mark_as_read` to mark articles as read
 
 ## Development
+
+### MCP Inspector (Local Debugging)
+
+Use the MCP Inspector web UI to interactively test and debug the server:
+
+```bash
+npx @modelcontextprotocol/inspector uv run python -m freshrss_mcp_server.server
+```
+
+This opens a browser interface where you can view available tools, execute them with custom parameters, and inspect request/response payloads.
 
 ### Running Tests
 

@@ -55,21 +55,71 @@ src/freshrss_mcp_server/
 ## Environment Variables
 
 ```bash
+# Required: FreshRSS API
 FRESHRSS_API_URL=https://your-freshrss-instance/api/greader.php
 FRESHRSS_USERNAME=your_username
 FRESHRSS_API_PASSWORD=your_api_password
+
+# Optional: MCP Server (defaults shown)
+MCP_TRANSPORT=sse      # "stdio" or "sse"
+MCP_HOST=0.0.0.0       # HTTP server host
+MCP_PORT=8080          # HTTP server port
 ```
 
 ## Running the Server
 
-### Development
+### Transport Modes
+
+The server supports two transport modes:
+
+| Mode | Use Case | Default |
+|------|----------|---------|
+| **SSE** | Remote/Self-hosted | ✅ Default (0.0.0.0:8080) |
+| **STDIO** | Local (Claude Desktop) | Use `--transport stdio` |
+
+### SSE/HTTP Mode (Default)
+
+By default, the server starts in SSE mode for remote deployment:
 
 ```bash
 # Install dependencies
 uv sync
 
-# Run MCP Server (stdio mode)
-uv run python -m freshrss_mcp_server.server
+# Run with defaults (SSE on 0.0.0.0:8080)
+uv run freshrss-mcp
+
+# Or configure via environment variables
+MCP_TRANSPORT=sse MCP_HOST=0.0.0.0 MCP_PORT=8080 uv run freshrss-mcp
+```
+
+SSE endpoints:
+- SSE: `http://<host>:<port>/sse`
+- Messages: `http://<host>:<port>/messages/`
+
+### STDIO Mode (Claude Desktop)
+
+For local use with Claude Desktop:
+
+```bash
+# Override via CLI
+uv run freshrss-mcp --transport stdio
+
+# Or via environment variable
+MCP_TRANSPORT=stdio uv run freshrss-mcp
+```
+
+### CLI Options
+
+CLI arguments override environment variables:
+
+```bash
+uv run freshrss-mcp --help
+
+Options:
+  --transport {stdio,sse}  Transport mode (env: MCP_TRANSPORT, default: sse)
+  --host HOST              HTTP server host (env: MCP_HOST, default: 0.0.0.0)
+  --port PORT              HTTP server port (env: MCP_PORT, default: 8080)
+  --version                Show version
 ```
 
 ### MCP Client Configuration (Claude Desktop)
@@ -79,7 +129,7 @@ uv run python -m freshrss_mcp_server.server
   "mcpServers": {
     "freshrss": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/freshrss-mcp-server", "python", "-m", "freshrss_mcp_server.server"],
+      "args": ["run", "--directory", "/path/to/freshrss-mcp-server", "freshrss-mcp", "--transport", "stdio"],
       "env": {
         "FRESHRSS_API_URL": "https://your-freshrss-instance/api/greader.php",
         "FRESHRSS_USERNAME": "your_username",
@@ -125,6 +175,19 @@ uv run ty check src/
 ```bash
 ruff format . && ruff check --fix . && uv run ty check .
 ```
+
+### MCP Inspector (Local Debugging)
+
+Use the MCP Inspector web UI to interactively test and debug the server:
+
+```bash
+npx @modelcontextprotocol/inspector uv run python -m freshrss_mcp_server.server
+```
+
+This opens a browser interface where you can:
+- View available tools and their schemas
+- Execute tools with custom parameters
+- Inspect request/response payloads
 
 ### Quick API Test
 
