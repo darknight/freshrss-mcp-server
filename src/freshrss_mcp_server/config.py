@@ -1,0 +1,43 @@
+"""Configuration management for FreshRSS MCP Server."""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings loaded from environment variables."""
+
+    # FreshRSS API Configuration
+    freshrss_api_url: str
+    freshrss_username: str
+    freshrss_api_password: str
+
+    # Optional settings with defaults
+    request_timeout: int = 30
+    default_article_limit: int = 100
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Get cached settings instance.
+
+    Returns:
+        Settings: Application settings loaded from environment.
+
+    Raises:
+        ValidationError: If required settings are missing.
+    """
+    # pydantic-settings loads required fields from environment variables
+    return Settings()  # type: ignore[call-arg]
+
+
+def clear_settings_cache() -> None:
+    """Clear the settings cache. Useful for testing."""
+    get_settings.cache_clear()
