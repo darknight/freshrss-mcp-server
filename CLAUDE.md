@@ -9,8 +9,11 @@ An MCP (Model Context Protocol) Server that connects to a self-hosted FreshRSS i
 - **Language**: Python 3.14
 - **Package Manager**: UV
 - **Linter/Formatter**: Ruff (installed via `uv tool install ruff@latest`)
-- **Type Checker**: ty (dev dependency, extremely fast Python type checker and language server)
+- **Type Checker**: ty (dev dependency)
 - **MCP SDK**: mcp-python-sdk (mcp[cli] >= 1.25.0)
+- **HTTP Client**: httpx (async)
+- **Data Validation**: Pydantic + pydantic-settings
+- **Article Extraction**: trafilatura
 - **API**: FreshRSS Google Reader compatible API
 
 ## Core Features
@@ -37,18 +40,6 @@ src/freshrss_mcp_server/
     ├── articles.py        # Article-related tools
     └── fetcher.py         # Full article fetcher
 
-todos/                     # Implementation task breakdown
-├── README.md              # Overview and progress tracker
-├── 00-architecture.md     # Architecture design
-├── 01-project-setup.md    # Project infrastructure
-├── 02-config.md           # Configuration management
-├── 03-exceptions.md       # Exception handling
-├── 04-models.md           # Data models
-├── 05-api-client.md       # FreshRSS API client
-├── 06-tools.md            # MCP tools
-├── 07-server.md           # MCP server
-├── 08-testing.md          # Testing plan
-└── 09-documentation.md    # Documentation tasks
 ```
 
 ## MCP Tools
@@ -133,6 +124,30 @@ uv run ty check src/
 
 ```bash
 ruff format . && ruff check --fix . && uv run ty check .
+```
+
+### Quick API Test
+
+```bash
+uv run python -c "
+import asyncio
+from freshrss_mcp_server.api.client import FreshRSSClient
+from freshrss_mcp_server.config import get_settings
+
+async def test():
+    settings = get_settings()
+    async with FreshRSSClient(
+        settings.freshrss_api_url,
+        settings.freshrss_username,
+        settings.freshrss_api_password,
+    ) as client:
+        subs = await client.get_subscriptions()
+        print(f'Found {len(subs)} subscriptions')
+        articles = await client.get_unread_articles(limit=5)
+        print(f'Found {len(articles)} unread articles')
+
+asyncio.run(test())
+"
 ```
 
 ## FreshRSS API Reference
