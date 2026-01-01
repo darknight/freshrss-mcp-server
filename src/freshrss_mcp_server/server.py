@@ -1,7 +1,11 @@
 """FreshRSS MCP Server - Main entry point."""
 
 import argparse
+import asyncio
+import atexit
 import logging
+import signal
+import sys
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -9,17 +13,60 @@ from mcp.server.fastmcp import FastMCP
 from freshrss_mcp_server import __version__
 from freshrss_mcp_server.api.client import FreshRSSClient
 from freshrss_mcp_server.config import get_settings
-from freshrss_mcp_server.tools import articles, fetcher
+from freshrss_mcp_server.tools import articles, browser, fetcher
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
+# Logger will be configured in main() based on settings
 logger = logging.getLogger("freshrss-mcp")
+
+
+def _configure_logging(level: str) -> None:
+    """Configure logging with the specified level."""
+    log_level = getattr(logging, level.upper(), logging.INFO)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,
+    )
+
 
 # Global client instance (initialized lazily)
 _client: FreshRSSClient | None = None
+
+# Shutdown flag to prevent multiple cleanup calls
+_shutdown_in_progress = False
+
+
+def _run_cleanup() -> None:
+    """Run async cleanup in a new event loop (for atexit handler)."""
+    global _shutdown_in_progress
+    if _shutdown_in_progress:
+        return
+    _shutdown_in_progress = True
+
+    logger.info("Running cleanup...")
+    try:
+        loop = asyncio.new_event_loop()
+        loop.run_until_complete(browser.close_browser())
+        loop.close()
+    except Exception as e:
+        logger.warning("Cleanup error: %s", e)
+    logger.info("Cleanup complete")
+
+
+def _signal_handler(signum: int, frame: Any) -> None:
+    """Handle shutdown signals (SIGTERM, SIGINT)."""
+    sig_name = signal.Signals(signum).name
+    logger.info("Received %s, initiating graceful shutdown...", sig_name)
+    _run_cleanup()
+    sys.exit(0)
+
+
+def _setup_signal_handlers() -> None:
+    """Register signal handlers for graceful shutdown."""
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+    atexit.register(_run_cleanup)
+    logger.debug("Signal handlers registered")
 
 
 async def get_client() -> FreshRSSClient:
@@ -199,26 +246,80 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     """Run the FreshRSS MCP server."""
     args = parse_args()
+    settings = get_settings()
+
+    # Configure logging based on settings
+    _configure_logging(settings.log_level)
+
+    # Setup graceful shutdown handlers
+    _setup_signal_handlers()
 
     logger.info("Starting FreshRSS MCP Server v%s", __version__)
     logger.info("Transport: %s", args.transport)
+    logger.info("Log level: %s", settings.log_level)
 
     if args.transport == "stdio":
         # Use default server for STDIO mode
         mcp.run()
-    elif args.transport == "sse":
-        # SSE mode without CORS (for non-browser clients)
-        server = create_server(host=args.host, port=args.port)
-        logger.info("HTTP Server: http://%s:%d", args.host, args.port)
-        logger.info("SSE endpoint: http://%s:%d/sse", args.host, args.port)
-        server.run(transport="sse")
     else:
-        # Streamable HTTP mode with CORS (for browser-based clients like MCP Inspector)
+        # HTTP modes (SSE or Streamable HTTP)
         import uvicorn
+        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.middleware.cors import CORSMiddleware
+        from starlette.requests import Request
+        from starlette.responses import JSONResponse, Response
+        from starlette.routing import Route
 
         server = create_server(host=args.host, port=args.port)
-        app = server.streamable_http_app()
+
+        # Get the appropriate Starlette app based on transport mode
+        if args.transport == "sse":
+            app = server.sse_app()
+            mcp_endpoint = "/sse"
+        else:
+            app = server.streamable_http_app()
+            mcp_endpoint = "/mcp"
+
+        # Add health check endpoint
+        async def health_check(request: Any) -> JSONResponse:
+            return JSONResponse(
+                {
+                    "status": "healthy",
+                    "version": __version__,
+                    "transport": args.transport,
+                }
+            )
+
+        app.routes.append(Route("/health", health_check, methods=["GET"]))
+
+        # Add API key authentication middleware (if API_KEY is set)
+        if settings.api_key:
+
+            class AuthMiddleware(BaseHTTPMiddleware):
+                async def dispatch(self, request: Request, call_next: Any) -> Response:
+                    # Skip auth for health check endpoint
+                    if request.url.path == "/health":
+                        return await call_next(request)
+
+                    # Check Authorization header
+                    auth_header = request.headers.get("Authorization", "")
+                    if not auth_header.startswith("Bearer "):
+                        return JSONResponse(
+                            {"error": "Missing or invalid Authorization header"},
+                            status_code=401,
+                        )
+
+                    token = auth_header[7:]  # Remove "Bearer " prefix
+                    if token != settings.api_key:
+                        return JSONResponse(
+                            {"error": "Invalid API key"},
+                            status_code=401,
+                        )
+
+                    return await call_next(request)
+
+            app.add_middleware(AuthMiddleware)  # type: ignore[arg-type]
+            logger.info("API authentication enabled")
 
         # Add CORS middleware for browser-based clients
         app.add_middleware(
@@ -235,7 +336,8 @@ def main() -> None:
         )
 
         logger.info("HTTP Server: http://%s:%d", args.host, args.port)
-        logger.info("MCP endpoint: http://%s:%d/mcp", args.host, args.port)
+        logger.info("MCP endpoint: http://%s:%d%s", args.host, args.port, mcp_endpoint)
+        logger.info("Health check: http://%s:%d/health", args.host, args.port)
         uvicorn.run(app, host=args.host, port=args.port)
 
 

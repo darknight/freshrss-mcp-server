@@ -27,6 +27,13 @@ class Settings(BaseSettings):
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8080
 
+    # Logging Configuration
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+
+    # API Authentication (optional)
+    # If set, requires Authorization: Bearer <api_key> header
+    api_key: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

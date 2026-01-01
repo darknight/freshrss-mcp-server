@@ -42,6 +42,9 @@ src/freshrss_mcp_server/
     ├── fetcher.py         # Full article fetcher (static + dynamic)
     └── browser.py         # Playwright browser wrapper
 
+deploy/                    # Deployment configurations
+├── freshrss-mcp.service   # Systemd service file
+└── install.sh             # Bare metal installation script
 ```
 
 ## MCP Tools
@@ -63,27 +66,34 @@ FRESHRSS_USERNAME=your_username
 FRESHRSS_API_PASSWORD=your_api_password
 
 # Optional: MCP Server (defaults shown)
-MCP_TRANSPORT=sse      # "stdio" or "sse"
-MCP_HOST=0.0.0.0       # HTTP server host
-MCP_PORT=8080          # HTTP server port
+MCP_TRANSPORT=sse           # "stdio", "sse", or "streamable-http"
+MCP_HOST=0.0.0.0            # HTTP server host
+MCP_PORT=8080               # HTTP server port
 
 # Optional: Dynamic fetch / Playwright (defaults shown)
 ENABLE_DYNAMIC_FETCH=true   # Enable Playwright for JS-rendered pages
 BROWSER_TIMEOUT=30          # Playwright page load timeout in seconds
+
+# Optional: Logging
+LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Optional: API Authentication (for public deployments)
+API_KEY=                    # If set, requires Authorization: Bearer <key> header
 ```
 
 ## Running the Server
 
 ### Transport Modes
 
-The server supports two transport modes:
+The server supports three transport modes:
 
 | Mode | Use Case | Default |
 |------|----------|---------|
-| **SSE** | Remote/Self-hosted | ✅ Default (0.0.0.0:8080) |
+| **SSE** | Remote/Self-hosted (legacy clients) | ✅ Default (0.0.0.0:8080) |
+| **Streamable HTTP** | Remote/Self-hosted (modern clients) | Use `--transport streamable-http` |
 | **STDIO** | Local (Claude Desktop) | Use `--transport stdio` |
 
-### SSE/HTTP Mode (Default)
+### HTTP Mode (SSE/Streamable HTTP)
 
 By default, the server starts in SSE mode for remote deployment:
 
@@ -97,13 +107,13 @@ uv run playwright install chromium
 # Run with defaults (SSE on 0.0.0.0:8080)
 uv run freshrss-mcp
 
-# Or configure via environment variables
-MCP_TRANSPORT=sse MCP_HOST=0.0.0.0 MCP_PORT=8080 uv run freshrss-mcp
+# Or use streamable-http (recommended for new deployments)
+uv run freshrss-mcp --transport streamable-http
 ```
 
-SSE endpoints:
-- SSE: `http://<host>:<port>/sse`
-- Messages: `http://<host>:<port>/messages/`
+Endpoints:
+- **SSE mode**: `/sse` (MCP endpoint), `/health` (health check)
+- **Streamable HTTP mode**: `/mcp` (MCP endpoint), `/health` (health check)
 
 ### STDIO Mode (Claude Desktop)
 
@@ -125,9 +135,9 @@ CLI arguments override environment variables:
 uv run freshrss-mcp --help
 
 Options:
-  --transport {stdio,sse}  Transport mode (env: MCP_TRANSPORT, default: sse)
-  --host HOST              HTTP server host (env: MCP_HOST, default: 0.0.0.0)
-  --port PORT              HTTP server port (env: MCP_PORT, default: 8080)
+  --transport {stdio,sse,streamable-http}  Transport mode (default: sse)
+  --host HOST              HTTP server host (default: 0.0.0.0)
+  --port PORT              HTTP server port (default: 8080)
   --version                Show version
 ```
 
@@ -147,6 +157,102 @@ Options:
     }
   }
 }
+```
+
+## Production Features
+
+### Health Check Endpoint
+
+Available at `/health` for SSE and Streamable HTTP modes:
+
+```bash
+curl http://localhost:8080/health
+# {"status": "healthy", "version": "0.1.0", "transport": "streamable-http"}
+```
+
+Use for:
+- Load balancer health checks
+- Kubernetes liveness/readiness probes
+- Monitoring systems
+
+### API Authentication
+
+For public deployments, enable simple API key authentication by setting `API_KEY`:
+
+```bash
+# Enable authentication
+API_KEY=your-secret-key uv run freshrss-mcp --transport streamable-http
+
+# Client requests must include header
+curl -H "Authorization: Bearer your-secret-key" http://localhost:8080/mcp
+```
+
+**Note**: This is a simple API key authentication, not OAuth 2.1 compliant. For internal/personal use only. The `/health` endpoint does not require authentication.
+
+### Graceful Shutdown
+
+The server handles SIGTERM and SIGINT signals gracefully:
+- Closes Playwright browser instances
+- Cleans up resources before exit
+
+This is important for container deployments and systemd services.
+
+## Deployment
+
+### Docker Deployment
+
+Using Docker Compose (recommended):
+
+```bash
+# Create .env file with your credentials
+cat > .env << EOF
+FRESHRSS_API_URL=https://your-freshrss/api/greader.php
+FRESHRSS_USERNAME=your_username
+FRESHRSS_API_PASSWORD=your_password
+EOF
+
+# Start the service
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+```
+
+Or build and run manually:
+
+```bash
+docker build -t freshrss-mcp .
+docker run -p 8080:8080 \
+  -e FRESHRSS_API_URL=https://your-freshrss/api/greader.php \
+  -e FRESHRSS_USERNAME=your_username \
+  -e FRESHRSS_API_PASSWORD=your_password \
+  -e API_KEY=your-secret-key \
+  freshrss-mcp
+```
+
+The Docker image includes:
+- Health check configuration
+- Playwright browser pre-installed
+- Streamable HTTP as default transport
+
+### Bare Metal / VM Deployment
+
+Use the provided installation script:
+
+```bash
+# Run as root
+sudo ./deploy/install.sh
+
+# Edit configuration
+sudo nano /opt/freshrss-mcp-server/.env
+
+# Start the service
+sudo systemctl enable freshrss-mcp
+sudo systemctl start freshrss-mcp
+
+# Check status
+sudo systemctl status freshrss-mcp
+sudo journalctl -u freshrss-mcp -f
 ```
 
 ## Development Commands
@@ -244,34 +350,3 @@ API Source: https://github.com/FreshRSS/FreshRSS/blob/edge/p/api/greader.php
    - If content appears incomplete (JS placeholders), retry with `force_dynamic=True`
 4. AI generates summary report for all articles
 5. After user reads, AI calls `mark_as_read` to mark as read
-
-## Docker Deployment
-
-Use Microsoft's official Playwright image for easy deployment:
-
-```dockerfile
-FROM mcr.microsoft.com/playwright/python:v1.57.0-noble
-
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-COPY src/ ./src/
-
-RUN pip install uv && uv sync
-
-# Browser already installed in base image
-
-ENV ENABLE_DYNAMIC_FETCH=true
-
-CMD ["uv", "run", "freshrss-mcp"]
-```
-
-Build and run:
-
-```bash
-docker build -t freshrss-mcp .
-docker run -p 8080:8080 \
-  -e FRESHRSS_API_URL=https://your-freshrss/api/greader.php \
-  -e FRESHRSS_USERNAME=your_username \
-  -e FRESHRSS_API_PASSWORD=your_password \
-  freshrss-mcp
-```

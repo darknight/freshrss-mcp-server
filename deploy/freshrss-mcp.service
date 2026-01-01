@@ -1,0 +1,24 @@
+[Unit]
+Description=FreshRSS MCP Server
+After=network.target
+
+[Service]
+Type=simple
+User=freshrss-mcp
+Group=freshrss-mcp
+WorkingDirectory=/opt/freshrss-mcp-server
+Environment="PATH=/opt/freshrss-mcp-server/.venv/bin:/usr/local/bin:/usr/bin"
+EnvironmentFile=/opt/freshrss-mcp-server/.env
+ExecStart=/opt/freshrss-mcp-server/.venv/bin/python -m freshrss_mcp_server.server
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/freshrss-mcp-server
+
+[Install]
+WantedBy=multi-user.target
