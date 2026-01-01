@@ -178,7 +178,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--transport",
-        choices=["stdio", "sse"],
+        choices=["stdio", "sse", "streamable-http"],
         default=settings.mcp_transport,
         help=f"Transport mode (default: {settings.mcp_transport}, env: MCP_TRANSPORT)",
     )
@@ -206,12 +206,37 @@ def main() -> None:
     if args.transport == "stdio":
         # Use default server for STDIO mode
         mcp.run()
-    else:
-        # Create new server with custom host/port for SSE mode
+    elif args.transport == "sse":
+        # SSE mode without CORS (for non-browser clients)
         server = create_server(host=args.host, port=args.port)
         logger.info("HTTP Server: http://%s:%d", args.host, args.port)
         logger.info("SSE endpoint: http://%s:%d/sse", args.host, args.port)
         server.run(transport="sse")
+    else:
+        # Streamable HTTP mode with CORS (for browser-based clients like MCP Inspector)
+        import uvicorn
+        from starlette.middleware.cors import CORSMiddleware
+
+        server = create_server(host=args.host, port=args.port)
+        app = server.streamable_http_app()
+
+        # Add CORS middleware for browser-based clients
+        app.add_middleware(
+            CORSMiddleware,  # type: ignore[arg-type]
+            allow_origins=["*"],
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "mcp-protocol-version",
+                "mcp-session-id",
+                "Authorization",
+                "Content-Type",
+            ],
+            expose_headers=["mcp-session-id"],
+        )
+
+        logger.info("HTTP Server: http://%s:%d", args.host, args.port)
+        logger.info("MCP endpoint: http://%s:%d/mcp", args.host, args.port)
+        uvicorn.run(app, host=args.host, port=args.port)
 
 
 if __name__ == "__main__":

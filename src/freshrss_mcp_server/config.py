@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     browser_timeout: int = 30
 
     # MCP Server Configuration
-    mcp_transport: Literal["stdio", "sse"] = "sse"
+    mcp_transport: Literal["stdio", "sse", "streamable-http"] = "sse"
     mcp_host: str = "0.0.0.0"
     mcp_port: int = 8080
 
