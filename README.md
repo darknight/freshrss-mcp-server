@@ -52,10 +52,32 @@ REQUEST_TIMEOUT=30
 DEFAULT_ARTICLE_LIMIT=100
 
 # Optional: MCP Server (defaults shown)
-MCP_TRANSPORT=sse      # "stdio" or "sse"
-MCP_HOST=0.0.0.0       # HTTP server host
-MCP_PORT=8080          # HTTP server port
+MCP_TRANSPORT=sse           # "stdio", "sse", or "streamable-http"
+MCP_HOST=::                 # HTTP server host (:: = all interfaces)
+MCP_PORT=8080               # HTTP server port
+
+# Optional: Dynamic content fetching (Playwright)
+ENABLE_DYNAMIC_FETCH=true   # Enable browser rendering for JS-heavy sites
+BROWSER_TIMEOUT=30          # Page load timeout in seconds
+
+# Optional: API Authentication (for remote deployments)
+API_KEY=your-secret-key     # If set, clients must use Authorization: Bearer <key>
 ```
+
+### API Authentication
+
+When `API_KEY` is set, all MCP endpoints require authentication:
+
+```bash
+# Client must include Authorization header
+curl -H "Authorization: Bearer your-secret-key" https://your-server/mcp
+```
+
+**Security notes:**
+- FreshRSS credentials (`FRESHRSS_USERNAME`, `FRESHRSS_API_PASSWORD`) are server-side secrets - clients never see them
+- Clients only need the `API_KEY` to access the MCP server
+- Always use HTTPS for public deployments
+- The `/health` endpoint does not require authentication
 
 ### FreshRSS API Setup
 
@@ -81,9 +103,9 @@ uv run freshrss-mcp --transport stdio
 
 **CLI Options** (override environment variables):
 ```
---transport {stdio,sse}  Transport mode (env: MCP_TRANSPORT, default: sse)
---host HOST              HTTP server host (env: MCP_HOST, default: 0.0.0.0)
---port PORT              HTTP server port (env: MCP_PORT, default: 8080)
+--transport {stdio,sse,streamable-http}  Transport mode (default: sse)
+--host HOST              HTTP server host (default: ::)
+--port PORT              HTTP server port (default: 8080)
 --version                Show version
 ```
 
@@ -144,8 +166,9 @@ Fetch full article content from original URL (for summary-only feeds).
 
 **Parameters:**
 - `url`: The original article URL to fetch
+- `force_dynamic` (optional, default: false): Use Playwright browser for JS-rendered pages
 
-**Returns:** Extracted article content with title and text
+**Returns:** Extracted article content with title, text, and method ('static' or 'dynamic')
 
 ## Example Workflow
 
@@ -212,7 +235,8 @@ uv run ty check .
 - **MCP SDK** - Model Context Protocol
 - **httpx** - Async HTTP client
 - **Pydantic** - Data validation
-- **trafilatura** - Article content extraction
+- **trafilatura** - Static article content extraction
+- **Playwright** - Dynamic content rendering (for JS-heavy sites)
 
 ## License
 
