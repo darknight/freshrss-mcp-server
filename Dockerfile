@@ -7,6 +7,7 @@ WORKDIR /app
 # Use uv.lock* to handle case where file doesn't exist
 COPY pyproject.toml ./
 COPY uv.lock* ./
+COPY README.md ./
 
 # Install uv and project dependencies
 RUN pip install uv && uv sync --frozen --no-dev
