@@ -2,7 +2,7 @@
 
 import logging
 from types import TracebackType
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -429,19 +429,21 @@ class FreshRSSClient:
         url = f"{self.api_url}/reader/api/0/edit-tag"
 
         # Build form data with multiple 'i' parameters for each article ID
-        data: list[tuple[str, str]] = [("T", token)]
+        form_data: list[tuple[str, str]] = [("T", token)]
         for article_id in article_ids:
-            data.append(("i", article_id))
+            form_data.append(("i", article_id))
         if add_tag:
-            data.append(("a", add_tag))
+            form_data.append(("a", add_tag))
         if remove_tag:
-            data.append(("r", remove_tag))
+            form_data.append(("r", remove_tag))
+
+        # Use urlencode to explicitly encode form data (handles duplicate keys correctly)
+        encoded_data = urlencode(form_data)
 
         try:
             response = await client.post(
                 url,
-                # httpx accepts list of tuples for multiple values with same key
-                data=data,  # type: ignore[arg-type]
+                content=encoded_data,
                 headers=self._get_headers(),
             )
             response.raise_for_status()
