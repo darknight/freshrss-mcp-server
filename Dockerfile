@@ -19,13 +19,13 @@ COPY src/ ./src/
 # Default environment variables
 ENV ENABLE_DYNAMIC_FETCH=true
 ENV MCP_TRANSPORT=streamable-http
-ENV MCP_HOST=0.0.0.0
-ENV MCP_PORT=8080
+ENV MCP_HOST=::
 ENV LOG_LEVEL=INFO
+# Note: MCP_PORT defaults to 8080, but Railway will inject PORT which is auto-detected
 
-# Health check - requires curl which is available in the base image
+# Health check - uses PORT env var with fallback to 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8080/health || exit 1
+  CMD curl -f http://localhost:${PORT:-8080}/health || exit 1
 
 EXPOSE 8080
 

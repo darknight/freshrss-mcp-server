@@ -1,8 +1,10 @@
 """Configuration management for FreshRSS MCP Server."""
 
+import os
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,8 +26,19 @@ class Settings(BaseSettings):
 
     # MCP Server Configuration
     mcp_transport: Literal["stdio", "sse", "streamable-http"] = "sse"
-    mcp_host: str = "0.0.0.0"
+    mcp_host: str = "::"  # Listen on all interfaces (IPv4 + IPv6)
     mcp_port: int = 8080
+
+    @model_validator(mode="before")
+    @classmethod
+    def use_railway_port(cls, data: dict) -> dict:
+        """Use Railway's PORT if MCP_PORT is not explicitly set."""
+        # Railway injects PORT, we prefer MCP_PORT but fallback to PORT
+        if "mcp_port" not in data and "MCP_PORT" not in os.environ:
+            railway_port = os.environ.get("PORT")
+            if railway_port:
+                data["mcp_port"] = int(railway_port)
+        return data
 
     # Logging Configuration
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"

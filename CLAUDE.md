@@ -67,8 +67,8 @@ FRESHRSS_API_PASSWORD=your_api_password
 
 # Optional: MCP Server (defaults shown)
 MCP_TRANSPORT=sse           # "stdio", "sse", or "streamable-http"
-MCP_HOST=0.0.0.0            # HTTP server host
-MCP_PORT=8080               # HTTP server port
+MCP_HOST=::                 # HTTP server host (:: = all interfaces, IPv4+IPv6)
+MCP_PORT=8080               # HTTP server port (Railway auto-injects PORT)
 
 # Optional: Dynamic fetch / Playwright (defaults shown)
 ENABLE_DYNAMIC_FETCH=true   # Enable Playwright for JS-rendered pages
@@ -234,6 +234,63 @@ The Docker image includes:
 - Health check configuration
 - Playwright browser pre-installed
 - Streamable HTTP as default transport
+
+### Railway Deployment
+
+Railway is ideal if you already have FreshRSS deployed there - services in the same project can communicate via private networking.
+
+**Step 1: Create a new service in your FreshRSS project**
+
+```bash
+# In your freshrss-mcp-server directory
+railway link  # Link to your existing project
+railway up    # Deploy
+```
+
+**Step 2: Configure environment variables**
+
+In Railway dashboard, add these variables to the freshrss-mcp service:
+
+```bash
+# Use internal networking to connect to FreshRSS (faster, no egress cost)
+FRESHRSS_API_URL=http://freshrss.railway.internal:80/api/greader.php
+
+# Your FreshRSS credentials
+FRESHRSS_USERNAME=your_username
+FRESHRSS_API_PASSWORD=your_api_password
+
+# Recommended settings
+MCP_TRANSPORT=streamable-http
+ENABLE_DYNAMIC_FETCH=true
+API_KEY=your-secret-key  # For public access security
+```
+
+> **Note**: Replace `freshrss` in the URL with your actual FreshRSS service name. Check your service name in Railway dashboard.
+
+**Step 3: Generate a public domain**
+
+In Railway dashboard, go to Settings > Networking > Generate Domain.
+
+**Benefits of Railway deployment:**
+- **Private networking**: Uses `*.railway.internal` for fast internal communication
+- **No egress fees**: Internal traffic is free ($0.10/GB saved on public traffic)
+- **Auto-scaling**: Railway handles scaling automatically
+- **Health checks**: Configured via `railway.toml`
+
+**Using with MCP clients:**
+
+```json
+{
+  "mcpServers": {
+    "freshrss": {
+      "url": "https://your-app.railway.app/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secret-key"
+      }
+    }
+  }
+}
+```
 
 ### Bare Metal / VM Deployment
 
