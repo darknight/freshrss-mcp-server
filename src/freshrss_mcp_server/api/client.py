@@ -152,9 +152,14 @@ class FreshRSSClient:
         return self._action_token
 
     async def _ensure_action_token(self) -> str:
-        """Ensure action token is available."""
-        if self._action_token is None:
-            await self.get_token()
+        """Ensure action token is available and fresh.
+
+        Note: Always fetch a new token because FreshRSS action tokens expire.
+        The token expiration time is relatively short, and caching can lead to
+        'Invalid POST token' errors in long-running sessions.
+        """
+        # Always get a fresh token to avoid expiration issues
+        await self.get_token()
         return self._action_token  # type: ignore[return-value]
 
     # =========================================================================
