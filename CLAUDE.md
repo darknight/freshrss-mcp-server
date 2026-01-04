@@ -17,6 +17,23 @@ An MCP (Model Context Protocol) Server that connects to a self-hosted FreshRSS i
 - **Browser Automation**: Playwright (for JS-rendered pages)
 - **API**: FreshRSS Google Reader compatible API
 
+## Development Guidelines
+
+**IMPORTANT: Transport Compatibility**
+
+This server supports three transport modes. Every code change must be tested against all three:
+
+| Transport | Protocol | Notes |
+|-----------|----------|-------|
+| **stdio** | Standard I/O | Used by Claude Desktop locally, no HTTP |
+| **sse** | Server-Sent Events | HTTP streaming, requires SSE-compatible middleware |
+| **streamable-http** | HTTP POST/Response | Standard HTTP, recommended for new deployments |
+
+When modifying HTTP-related code (middleware, routes, etc.):
+- `BaseHTTPMiddleware` is **NOT compatible** with SSE streaming - use pure ASGI middleware instead
+- Test all three modes before deploying
+- SSE mode uses `/sse` endpoint, streamable-http uses `/mcp` endpoint
+
 ## Core Features
 
 1. **Fetch Unread Articles**: Get all unread articles from FreshRSS

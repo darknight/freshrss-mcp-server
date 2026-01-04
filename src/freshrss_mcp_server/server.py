@@ -264,10 +264,8 @@ def main() -> None:
     else:
         # HTTP modes (SSE or Streamable HTTP)
         import uvicorn
-        from starlette.middleware.base import BaseHTTPMiddleware
         from starlette.middleware.cors import CORSMiddleware
-        from starlette.requests import Request
-        from starlette.responses import JSONResponse, Response
+        from starlette.responses import JSONResponse
         from starlette.routing import Route
 
         server = create_server(host=args.host, port=args.port)
@@ -293,30 +291,47 @@ def main() -> None:
         app.routes.append(Route("/health", health_check, methods=["GET"]))
 
         # Add API key authentication middleware (if API_KEY is set)
+        # NOTE: Use pure ASGI middleware instead of BaseHTTPMiddleware
+        # because BaseHTTPMiddleware is incompatible with SSE streaming responses
         if settings.api_key:
+            from starlette.types import ASGIApp, Receive, Scope, Send
 
-            class AuthMiddleware(BaseHTTPMiddleware):
-                async def dispatch(self, request: Request, call_next: Any) -> Response:
+            class AuthMiddleware:
+                def __init__(self, app: ASGIApp) -> None:
+                    self.app = app
+
+                async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+                    if scope["type"] != "http":
+                        await self.app(scope, receive, send)
+                        return
+
                     # Skip auth for health check endpoint
-                    if request.url.path == "/health":
-                        return await call_next(request)
+                    if scope["path"] == "/health":
+                        await self.app(scope, receive, send)
+                        return
 
                     # Check Authorization header
-                    auth_header = request.headers.get("Authorization", "")
+                    headers = dict(scope.get("headers", []))
+                    auth_header = headers.get(b"authorization", b"").decode()
+
                     if not auth_header.startswith("Bearer "):
-                        return JSONResponse(
+                        response = JSONResponse(
                             {"error": "Missing or invalid Authorization header"},
                             status_code=401,
                         )
+                        await response(scope, receive, send)
+                        return
 
                     token = auth_header[7:]  # Remove "Bearer " prefix
                     if token != settings.api_key:
-                        return JSONResponse(
+                        response = JSONResponse(
                             {"error": "Invalid API key"},
                             status_code=401,
                         )
+                        await response(scope, receive, send)
+                        return
 
-                    return await call_next(request)
+                    await self.app(scope, receive, send)
 
             app.add_middleware(AuthMiddleware)  # type: ignore[arg-type]
             logger.info("API authentication enabled")
