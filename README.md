@@ -29,6 +29,9 @@ cd freshrss-mcp-server
 2. Install dependencies:
 ```bash
 uv sync
+
+# Install Playwright browser (required for dynamic fetch)
+uv run playwright install chromium
 ```
 
 3. Create `.env` file with your FreshRSS credentials:
@@ -62,22 +65,10 @@ BROWSER_TIMEOUT=30          # Page load timeout in seconds
 
 # Optional: API Authentication (for remote deployments)
 API_KEY=your-secret-key     # If set, clients must use Authorization: Bearer <key>
+
+# Optional: Logging
+LOG_LEVEL=INFO              # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
-
-### API Authentication
-
-When `API_KEY` is set, all MCP endpoints require authentication:
-
-```bash
-# Client must include Authorization header
-curl -H "Authorization: Bearer your-secret-key" https://your-server/mcp
-```
-
-**Security notes:**
-- FreshRSS credentials (`FRESHRSS_USERNAME`, `FRESHRSS_API_PASSWORD`) are server-side secrets - clients never see them
-- Clients only need the `API_KEY` to access the MCP server
-- Always use HTTPS for public deployments
-- The `/health` endpoint does not require authentication
 
 ### FreshRSS API Setup
 
@@ -88,20 +79,34 @@ curl -H "Authorization: Bearer your-secret-key" https://your-server/mcp
 
 ## Usage
 
+### Transport Modes
+
+The server supports three transport modes:
+
+| Mode | Use Case | Endpoint |
+|------|----------|----------|
+| **SSE** | Remote deployment (legacy clients) | `/sse` |
+| **Streamable HTTP** | Remote deployment (recommended) | `/mcp` |
+| **STDIO** | Local (Claude Desktop direct) | N/A |
+
 ### Running the Server
 
-**SSE/HTTP Mode** (default, for remote deployment):
+**SSE Mode** (default):
 ```bash
-# Run with defaults (SSE on 0.0.0.0:8080)
 uv run freshrss-mcp
 ```
 
-**STDIO Mode** (for Claude Desktop):
+**Streamable HTTP Mode** (recommended for new deployments):
+```bash
+uv run freshrss-mcp --transport streamable-http
+```
+
+**STDIO Mode** (for Claude Desktop local):
 ```bash
 uv run freshrss-mcp --transport stdio
 ```
 
-**CLI Options** (override environment variables):
+**CLI Options**:
 ```
 --transport {stdio,sse,streamable-http}  Transport mode (default: sse)
 --host HOST              HTTP server host (default: ::)
@@ -109,9 +114,53 @@ uv run freshrss-mcp --transport stdio
 --version                Show version
 ```
 
-### Claude Desktop Configuration
+### Health Check
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+For SSE and Streamable HTTP modes, a health check endpoint is available:
+
+```bash
+curl http://localhost:8080/health
+# {"status": "healthy", "version": "0.1.0", "transport": "streamable-http"}
+```
+
+### API Authentication
+
+When `API_KEY` is set, all MCP endpoints require authentication:
+
+```bash
+curl -H "Authorization: Bearer your-secret-key" https://your-server/mcp
+```
+
+**Security notes:**
+- FreshRSS credentials are server-side secrets - clients never see them
+- Clients only need the `API_KEY` to access the MCP server
+- Always use HTTPS for public deployments
+- The `/health` endpoint does not require authentication
+
+## Claude Desktop Configuration
+
+### Remote Server (Recommended)
+
+For connecting to a deployed server (Railway, Docker, etc.), use `mcp-remote`:
+
+```json
+{
+  "mcpServers": {
+    "freshrss": {
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "https://your-server.example.com/mcp",
+        "--header", "Authorization: Bearer ${YOUR_API_KEY}"
+      ]
+    }
+  }
+}
+```
+
+### Local Server (STDIO)
+
+For running the server locally:
 
 ```json
 {
@@ -127,6 +176,90 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
     }
   }
 }
+```
+
+## Deployment
+
+### Docker Deployment
+
+Using Docker Compose (recommended):
+
+```bash
+# Create .env file with your credentials
+cat > .env << EOF
+FRESHRSS_API_URL=https://your-freshrss/api/greader.php
+FRESHRSS_USERNAME=your_username
+FRESHRSS_API_PASSWORD=your_password
+API_KEY=your-secret-key
+EOF
+
+# Start the service
+docker compose up -d
+
+# Check logs
+docker compose logs -f
+```
+
+Or build and run manually:
+
+```bash
+docker build -t freshrss-mcp .
+docker run -p 8080:8080 \
+  -e FRESHRSS_API_URL=https://your-freshrss/api/greader.php \
+  -e FRESHRSS_USERNAME=your_username \
+  -e FRESHRSS_API_PASSWORD=your_password \
+  -e API_KEY=your-secret-key \
+  freshrss-mcp
+```
+
+The Docker image includes:
+- Health check configuration
+- Playwright browser pre-installed
+- Streamable HTTP as default transport
+
+### Railway Deployment
+
+Railway is ideal if you already have FreshRSS deployed there - services in the same project can communicate via private networking.
+
+**Step 1: Deploy to Railway**
+
+```bash
+# In your freshrss-mcp-server directory
+railway link  # Link to your existing project
+railway up    # Deploy
+```
+
+**Step 2: Configure environment variables**
+
+In Railway dashboard, add these variables:
+
+```bash
+# Use internal networking if FreshRSS is in same project (faster, no egress cost)
+FRESHRSS_API_URL=http://freshrss.railway.internal:80/api/greader.php
+
+# Your FreshRSS credentials
+FRESHRSS_USERNAME=your_username
+FRESHRSS_API_PASSWORD=your_api_password
+
+# Recommended settings
+MCP_TRANSPORT=streamable-http
+ENABLE_DYNAMIC_FETCH=true
+API_KEY=your-secret-key
+```
+
+**Step 3: Generate a public domain**
+
+In Railway dashboard, go to Settings > Networking > Generate Domain.
+
+### Bare Metal / VM Deployment
+
+Use the provided installation script:
+
+```bash
+sudo ./deploy/install.sh
+sudo nano /opt/freshrss-mcp-server/.env
+sudo systemctl enable freshrss-mcp
+sudo systemctl start freshrss-mcp
 ```
 
 ## Available Tools
@@ -187,8 +320,6 @@ Use the MCP Inspector web UI to interactively test and debug the server:
 ```bash
 npx @modelcontextprotocol/inspector uv run python -m freshrss_mcp_server.server
 ```
-
-This opens a browser interface where you can view available tools, execute them with custom parameters, and inspect request/response payloads.
 
 ### Running Tests
 
